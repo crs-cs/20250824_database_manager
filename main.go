@@ -1,63 +1,49 @@
 package main
 
 import (
-	"context"
-	"database/sql"
-	"fmt"
 	"log"
 	"time"
 
-	_ "github.com/go-sql-driver/mysql"
+	mod "shioji.cloud/app/dabase/modules"
 )
 
-func main() {
-	// chartier で接続する例
-	dsn := "chartier:ss642644@tcp(153.121.70.230:3306)/cloud_database?charset=utf8mb4&parseTime=true&loc=Asia%2FTokyo"
+/* ========== 利用例（main） ========== */
 
-	db, err := sql.Open("mysql", dsn)
+func main() {
+	//--- 設定ロード
+	conf, err := mod.LoadDBConfigFromEnv()
 	if err != nil {
 		log.Fatal(err)
-	}	
+	}
+
+	//--- MySQLに接続
+	db, err := mod.OpenMySQL(conf)
+	if err != nil {
+		log.Fatal(err)
+	}
 	defer db.Close()
+	log.Println("DB接続OK")
 
-	db.SetMaxOpenConns(10)
-	db.SetMaxIdleConns(5)
-	db.SetConnMaxLifetime(10 * time.Minute)
-
-	ctx, cancel := context.WithTimeout(con	text.Background(), 3*time.Second)
+	//--- 自動キャンセル設定
+	ctx, cancel := mod.Ctx(3 * time.Second)
 	defer cancel()
 
-	if err := db.PingContext(ctx); err != nil {
-		log.Fatal("Ping error:", err)
-	}
-	fmt.Println("DB接続OK")
-
-	// 挿入例
-	res, err := db.ExecContext(ctx,
-		`INSERT INTO ship_database (CreatedAt, sample) VALUES (?, ?)`,
-		time.Now().Format("2006-01-02"),
-		"Sample",
-	)
-
+	//--- データの挿入
+	id, err := mod.InsertShipSampleDateTime(ctx, db, "SHIOJI MARU IV")
 	if err != nil {
 		log.Fatal("INSERT error:", err)
 	}
-	id, _ := res.LastInsertId()
-	fmt.Println("INSERT id:", id)
+	log.Println("INSERT OK, LastInsertID =", id)
 
-	// 取得例
-	type Row struct {
-		ID        int
-		CreatedAt time.Time
-		Sample    string
-	}
-	var r Row
-	err = db.QueryRowContext(ctx,
-		`SELECT id, CreatedAt, Sample
-		 FROM ship_database WHERE id=?`, id).
-		Scan(&r.ID, &r.CreatedAt, &r.Sample)
+	//--- データの取得
+	rec, err := mod.GetShipRecordBySample(ctx, db, "SHIOJI MARU IV")
 	if err != nil {
 		log.Fatal("SELECT error:", err)
 	}
-	fmt.Printf("ROW: %+v\n", r)
+	if rec == nil {
+		log.Println("レコードは見つかりませんでした")
+	} else {
+		log.Printf("ID=%d, Sample=%s, CreatedAt=%v", rec.ID, rec.Sample, rec.CreatedAt)
+	}
+
 }
